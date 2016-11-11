@@ -1,3 +1,10 @@
+/**
+ * @license
+ * Copyright Google Inc. All Rights Reserved.
+ *
+ * Use of this source code is governed by an MIT-style license that can be
+ * found in the LICENSE file at https://angular.io/license
+ */
 
 angular.module('ngComponentRouter').
     value('$route', null). // can be overloaded with ngRouteShim
@@ -52,11 +59,11 @@ function routerFactory($q, $location, $browser, $rootScope, $injector, $routerRo
     if ($injector.has(serviceName)) {
       var definitions = $injector.get(serviceName);
       if (definitions.length > 1) {
-        throw new BaseException('too many directives named "' + name + '"');
+        throw new Error('too many directives named "' + name + '"');
       }
       return definitions[0].controller;
     } else {
-      throw new BaseException('directive "' + name + '" is not registered');
+      throw new Error('directive "' + name + '" is not registered');
     }
   }
 
@@ -85,7 +92,7 @@ function routerFactory($q, $location, $browser, $rootScope, $injector, $routerRo
   // Override this method to actually get hold of the child routes
   RouteRegistry.prototype.configFromComponent = function (component) {
     var that = this;
-    if (isString(component)) {
+    if (typeof component === 'string') {
       // Don't read the annotations component a type more than once –
       // this prevents an infinite loop if a component routes recursively.
       if (this._rules.has(component)) {
@@ -96,7 +103,7 @@ function routerFactory($q, $location, $browser, $rootScope, $injector, $routerRo
         controller.$routeConfig.forEach(function (config) {
           var loader = config.loader;
           if (isPresent(loader)) {
-            config = angular.extend({}, config, { loader: () => $injector.invoke(loader) });
+            config = angular.extend({}, config, { loader: function() { return $injector.invoke(loader); } });
           }
           that.config(component, config);
         });

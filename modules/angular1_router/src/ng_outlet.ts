@@ -1,3 +1,11 @@
+/**
+ * @license
+ * Copyright Google Inc. All Rights Reserved.
+ *
+ * Use of this source code is governed by an MIT-style license that can be
+ * found in the LICENSE file at https://angular.io/license
+ */
+
 ///<reference path="../typings/angularjs/angular.d.ts"/>
 
 
@@ -118,14 +126,16 @@ function ngOutletDirective($animate, $q: ng.IQService, $rootRouter) {
         newScope.$$router = this.controller.$$router;
         this.deferredActivation = $q.defer();
 
-        let clone = $transclude(newScope, clone => {
+        let clone = $transclude(newScope, clone => {});
+
+        let activateView = () => {
           $animate.enter(clone, null, this.currentElement || element);
           this.cleanupLastView();
-        });
+          this.currentElement = clone;
+          this.currentScope = newScope;
+        };
 
-        this.currentElement = clone;
-        this.currentScope = newScope;
-        return this.deferredActivation.promise;
+        return this.deferredActivation.promise.then(activateView, activateView);
       }
     }
 
@@ -211,6 +221,10 @@ function ngLinkDirective($rootRouter, $parse) {
     let link = attrs.ngLink || '';
 
     function getLink(params) {
+      if (!params) {
+        return;
+      }
+
       navigationInstruction = router.generate(params);
 
       scope.$watch(function() { return router.isRouteActive(navigationInstruction); },

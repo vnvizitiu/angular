@@ -1,5 +1,13 @@
+/**
+ * @license
+ * Copyright Google Inc. All Rights Reserved.
+ *
+ * Use of this source code is governed by an MIT-style license that can be
+ * found in the LICENSE file at https://angular.io/license
+ */
+
 // tree benchmark in React
-import {getIntParameter, bindAction} from 'angular2/src/testing/benchmark_util';
+import {getIntParameter, bindAction} from '@angular/testing/src/benchmark_util';
 import * as React from './react.min';
 
 var TreeComponent = React.createClass({
@@ -11,13 +19,13 @@ var TreeComponent = React.createClass({
     var left = null;
     if (treeNode.left) {
       left = React.createElement(
-          "span", {}, [React.createElement(TreeComponent, {treeNode: treeNode.left}, "")])
+          "span", {}, [React.createElement(TreeComponent, {treeNode: treeNode.left}, "")]);
     }
 
     var right = null;
     if (treeNode.right) {
       right = React.createElement(
-          "span", {}, [React.createElement(TreeComponent, {treeNode: treeNode.right}, "")])
+          "span", {}, [React.createElement(TreeComponent, {treeNode: treeNode.right}, "")]);
     }
 
     var span = React.createElement("span", {}, [" " + treeNode.value, left, right]);

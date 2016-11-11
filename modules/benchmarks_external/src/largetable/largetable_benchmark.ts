@@ -1,4 +1,12 @@
-import {getIntParameter, getStringParameter, bindAction} from 'angular2/src/testing/benchmark_util';
+/**
+ * @license
+ * Copyright Google Inc. All Rights Reserved.
+ *
+ * Use of this source code is governed by an MIT-style license that can be
+ * found in the LICENSE file at https://angular.io/license
+ */
+
+import {getIntParameter, getStringParameter, bindAction} from '@angular/testing/src/benchmark_util';
 declare var angular: any;
 
 var totalRows = getIntParameter('rows');
@@ -108,4 +116,4 @@ angular.module('app', [])
           }
         }
       };
-    })
+    });
