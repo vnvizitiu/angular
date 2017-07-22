@@ -1,8 +1,23 @@
 /** @experimental */
-export declare function downgradeComponent(info: ComponentInfo): angular.IInjectable;
+export declare function downgradeComponent(info: {
+    component: Type<any>;
+    /** @experimental */ propagateDigest?: boolean;
+    /** @deprecated */ inputs?: string[];
+    /** @deprecated */ outputs?: string[];
+    /** @deprecated */ selectors?: string[];
+}): any;
 
 /** @experimental */
-export declare function downgradeInjectable(token: any): (string | ((i: Injector) => any))[];
+export declare function downgradeInjectable(token: any): Function;
+
+/** @experimental */
+export declare function downgradeModule<T>(moduleFactoryOrBootstrapFn: NgModuleFactory<T> | ((extraProviders: Provider[]) => Promise<NgModuleRef<T>>)): string;
+
+/** @stable */
+export declare function getAngularLib(): any;
+
+/** @stable */
+export declare function setAngularLib(ng: any): void;
 
 /** @experimental */
 export declare class UpgradeComponent implements OnInit, OnChanges, DoCheck, OnDestroy {
@@ -15,9 +30,14 @@ export declare class UpgradeComponent implements OnInit, OnChanges, DoCheck, OnD
 
 /** @experimental */
 export declare class UpgradeModule {
-    $injector: angular.IInjectorService;
+    $injector: any;
     injector: Injector;
     ngZone: NgZone;
-    constructor(injector: Injector, ngZone: NgZone);
-    bootstrap(element: Element, modules?: string[], config?: angular.IAngularBootstrapConfig): void;
+    constructor(
+        injector: Injector,
+        ngZone: NgZone);
+    bootstrap(element: Element, modules?: string[], config?: any): void;
 }
+
+/** @stable */
+export declare const VERSION: Version;

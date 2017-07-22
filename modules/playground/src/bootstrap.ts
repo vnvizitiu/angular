@@ -18,13 +18,16 @@
 
   function playgroundBootstrap() {
     // check query param
-    var useBundles = location.search.indexOf('bundles=false') == -1;
+    const useBundles = location.search.indexOf('bundles=false') == -1;
 
     if (useBundles) {
       System.config({
         map: {
           'index': 'index.js',
           '@angular/common': '/packages-dist/common/bundles/common.umd.js',
+          '@angular/animations': '/packages-dist/animation/bundles/animations.umd.js',
+          '@angular/platform-browser/animations':
+              '/packages-dist/platform-browser/animations/bundles/platform-browser-animations.umd.js',
           '@angular/compiler': '/packages-dist/compiler/bundles/compiler.umd.js',
           '@angular/core': '/packages-dist/core/bundles/core.umd.js',
           '@angular/forms': '/packages-dist/forms/bundles/forms.umd.js',
@@ -60,6 +63,7 @@
         packages: {
           'app': {defaultExtension: 'js'},
           '@angular/common': {main: 'index.js', defaultExtension: 'js'},
+          '@angular/animations': {main: 'index.js', defaultExtension: 'js'},
           '@angular/compiler': {main: 'index.js', defaultExtension: 'js'},
           '@angular/core': {main: 'index.js', defaultExtension: 'js'},
           '@angular/forms': {main: 'index.js', defaultExtension: 'js'},

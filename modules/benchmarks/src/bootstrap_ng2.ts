@@ -18,12 +18,15 @@
 
   function benchmarksBootstrap() {
     // check query param
-    var useBundles = location.search.indexOf('bundles=false') == -1;
+    const useBundles = location.search.indexOf('bundles=false') == -1;
     if (useBundles) {
       System.config({
         defaultJSExtensions: true,
         map: {
           '@angular/core': '/packages-dist/core/bundles/core.umd.js',
+          '@angular/animations': '/packages-dist/common/bundles/animations.umd.js',
+          '@angular/platform-browser/animations':
+              '/packages-dist/platform-browser/bundles/platform-browser-animations.umd.js',
           '@angular/common': '/packages-dist/common/bundles/common.umd.js',
           '@angular/forms': '/packages-dist/forms/bundles/forms.umd.js',
           '@angular/compiler': '/packages-dist/compiler/bundles/compiler.umd.js',
@@ -51,6 +54,8 @@
         map: {'@angular': '/all/@angular', 'rxjs': '/all/benchmarks/vendor/rxjs'},
         packages: {
           '@angular/core': {main: 'index.js', defaultExtension: 'js'},
+          '@angular/animations': {main: 'index.js', defaultExtension: 'js'},
+          '@angular/platform-browser/animations': {main: 'index.js', defaultExtension: 'js'},
           '@angular/compiler': {main: 'index.js', defaultExtension: 'js'},
           '@angular/router': {main: 'index.js', defaultExtension: 'js'},
           '@angular/common': {main: 'index.js', defaultExtension: 'js'},

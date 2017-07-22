@@ -17,15 +17,15 @@ Help us keep Angular open and inclusive. Please read and follow our [Code of Con
 
 ## <a name="question"></a> Got a Question or Problem?
 
-Please, do not open issues for the general support questions as we want to keep GitHub issues for bug reports and feature requests. You've got much better chances of getting your question answered on [StackOverflow](https://stackoverflow.com/questions/tagged/angular) where the questions should be tagged with tag `angular`.
+Do not open issues for general support questions as we want to keep GitHub issues for bug reports and feature requests. You've got much better chances of getting your question answered on [Stack Overflow](https://stackoverflow.com/questions/tagged/angular) where the questions should be tagged with tag `angular`.
 
-StackOverflow is a much better place to ask questions since:
+Stack Overflow is a much better place to ask questions since:
 
-- there are thousands of people willing to help on StackOverflow
+- there are thousands of people willing to help on Stack Overflow
 - questions and answers stay available for public viewing so your question / answer might help someone else
-- StackOverflow's voting system assures that the best answers are prominently visible.
+- Stack Overflow's voting system assures that the best answers are prominently visible.
 
-To save your and our time we will be systematically closing all the issues that are requests for general support and redirecting people to StackOverflow.
+To save your and our time, we will systematically close all issues that are requests for general support and redirect people to Stack Overflow.
 
 If you would like to chat about the question in real-time, you can reach out via [our gitter channel][gitter].
 
@@ -57,7 +57,7 @@ We want to fix all the issues as soon as possible, but before fixing a bug we ne
 - 3rd-party libraries and their versions
 - and most importantly - a use-case that fails
 
-A minimal reproduce scenario using http://plnkr.co/ allows us to quickly confirm a bug (or point out coding problem) as well as confirm that we are fixing the right problem. If plunker is not a suitable way to demostrate the problem (for example for issues related to our npm packaging), please create a standalone git repository demostrating the problem.
+A minimal reproduce scenario using http://plnkr.co/ allows us to quickly confirm a bug (or point out coding problem) as well as confirm that we are fixing the right problem. If plunker is not a suitable way to demonstrate the problem (for example for issues related to our npm packaging), please create a standalone git repository demonstrating the problem.
 
 We will be insisting on a minimal reproduce scenario in order to save maintainers time and ultimately be able to fix more bugs. Interestingly, from our experience users often find coding problems themselves while preparing a minimal plunk. We understand that sometimes it might be hard to extract essentials bits of code from a larger code-base but we really need to isolate the problem before we can fix it.
 
@@ -147,7 +147,7 @@ To ensure consistency throughout the source code, keep these rules in mind as yo
 * All public API methods **must be documented**. (Details TBC).
 * We follow [Google's JavaScript Style Guide][js-style-guide], but wrap all code at
   **100 characters**. An automated formatter is available, see
-  [DEVELOPER.md](DEVELOPER.md#clang-format).
+  [DEVELOPER.md](docs/DEVELOPER.md#clang-format).
 
 ## <a name="commit"></a> Commit Message Guidelines
 
@@ -191,21 +191,44 @@ If the commit reverts a previous commit, it should begin with `revert: `, follow
 ### Type
 Must be one of the following:
 
-* **feat**: A new feature
-* **fix**: A bug fix
-* **docs**: Documentation only changes
-* **style**: Changes that do not affect the meaning of the code (white-space, formatting, missing
-  semi-colons, etc)
-* **refactor**: A code change that neither fixes a bug nor adds a feature
-* **perf**: A code change that improves performance
-* **test**: Adding missing tests or correcting existing tests
 * **build**: Changes that affect the build system or external dependencies (example scopes: gulp, broccoli, npm)
 * **ci**: Changes to our CI configuration files and scripts (example scopes: Travis, Circle, BrowserStack, SauceLabs)
-* **chore**: Other changes that don't modify `src` or `test` files
+* **docs**: Documentation only changes
+* **feat**: A new feature
+* **fix**: A bug fix
+* **perf**: A code change that improves performance
+* **refactor**: A code change that neither fixes a bug nor adds a feature
+* **style**: Changes that do not affect the meaning of the code (white-space, formatting, missing semi-colons, etc)
+* **test**: Adding missing tests or correcting existing tests
 
 ### Scope
-The scope could be anything specifying place of the commit change. For example
-`Compiler`, `ElementInjector`, etc.
+The scope should be the name of the npm package affected (as perceived by person reading changelog generated from commit messages.
+
+The following is the list of supported scopes:
+
+* **animations**
+* **common**
+* **compiler**
+* **compiler-cli**
+* **core**
+* **forms**
+* **http**
+* **language-service**
+* **platform-browser**
+* **platform-browser-dynamic**
+* **platform-server**
+* **platform-webworker**
+* **platform-webworker-dynamic**
+* **router**
+* **upgrade**
+* **tsc-wrapped**
+
+There are currently a few exceptions to the "use package name" rule:
+
+* **packaging**: used for changes that change the npm package layout in all of our packages, e.g. public path changes, package.json changes done to all packages, d.ts file/format changes, changes to bundles, etc.
+* **changelog**: used for updating the release notes in CHANGELOG.md
+* **aio**: used for docs-app (angular.io) related changes within the /aio directory of the repo
+* none/empty string: useful for `style`, `test` and `refactor` changes that are done across all packages (e.g. `style: add missing semicolons`)
 
 ### Subject
 The subject contains succinct description of the change:
@@ -240,11 +263,11 @@ changes to be accepted, the CLA must be signed. It's a quick process, we promise
 [coc]: https://github.com/angular/code-of-conduct/blob/master/CODE_OF_CONDUCT.md
 [commit-message-format]: https://docs.google.com/document/d/1QrDFcIiPjSLDn3EL15IJygNPiHORgU1_OOAqWjiDU5Y/edit#
 [corporate-cla]: http://code.google.com/legal/corporate-cla-v1.0.html
-[dev-doc]: https://github.com/angular/angular/blob/master/DEVELOPER.md
+[dev-doc]: https://github.com/angular/angular/blob/master/docs/DEVELOPER.md
 [github]: https://github.com/angular/angular
 [gitter]: https://gitter.im/angular/angular
 [individual-cla]: http://code.google.com/legal/individual-cla-v1.0.html
-[js-style-guide]: https://google.github.io/styleguide/javascriptguide.xml
+[js-style-guide]: https://google.github.io/styleguide/jsguide.html
 [jsfiddle]: http://jsfiddle.net
 [plunker]: http://plnkr.co/edit
 [runnable]: http://runnable.com

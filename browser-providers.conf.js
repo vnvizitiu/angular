@@ -24,9 +24,6 @@ var CIconfiguration = {
   'IE10': {unitTest: {target: 'SL', required: true}, e2e: {target: null, required: true}},
   'IE11': {unitTest: {target: 'SL', required: true}, e2e: {target: null, required: true}},
   'Edge': {unitTest: {target: 'BS', required: false}, e2e: {target: null, required: true}},
-  'Android4.1': {unitTest: {target: 'SL', required: false}, e2e: {target: null, required: true}},
-  'Android4.2': {unitTest: {target: 'SL', required: false}, e2e: {target: null, required: true}},
-  'Android4.3': {unitTest: {target: 'SL', required: false}, e2e: {target: null, required: true}},
   'Android4.4': {unitTest: {target: 'SL', required: false}, e2e: {target: null, required: true}},
   'Android5': {unitTest: {target: 'SL', required: false}, e2e: {target: null, required: true}},
   'Safari7': {unitTest: {target: 'BS', required: false}, e2e: {target: null, required: true}},
@@ -36,7 +33,7 @@ var CIconfiguration = {
   'iOS7': {unitTest: {target: 'BS', required: true}, e2e: {target: null, required: true}},
   'iOS8': {unitTest: {target: 'BS', required: false}, e2e: {target: null, required: true}},
   'iOS9': {unitTest: {target: 'BS', required: false}, e2e: {target: null, required: true}},
-  'iOS10': {unitTest: {target: 'BS', required: false}, e2e: {target: null, required: true}},
+  'iOS10': {unitTest: {target: 'SL', required: false}, e2e: {target: null, required: true}},
   'WindowsPhone': {unitTest: {target: 'BS', required: false}, e2e: {target: null, required: true}}
 };
 
@@ -44,10 +41,10 @@ var customLaunchers = {
   'DartiumWithWebPlatform':
       {base: 'Dartium', flags: ['--enable-experimental-web-platform-features']},
   'ChromeNoSandbox': {base: 'Chrome', flags: ['--no-sandbox']},
-  'SL_CHROME': {base: 'SauceLabs', browserName: 'chrome', version: '52'},
+  'SL_CHROME': {base: 'SauceLabs', browserName: 'chrome', version: '54'},
   'SL_CHROMEBETA': {base: 'SauceLabs', browserName: 'chrome', version: 'beta'},
   'SL_CHROMEDEV': {base: 'SauceLabs', browserName: 'chrome', version: 'dev'},
-  'SL_FIREFOX': {base: 'SauceLabs', browserName: 'firefox', version: '46'},
+  'SL_FIREFOX': {base: 'SauceLabs', browserName: 'firefox', version: '50'},
   'SL_FIREFOXBETA': {base: 'SauceLabs', browserName: 'firefox', version: 'beta'},
   'SL_FIREFOXDEV': {base: 'SauceLabs', browserName: 'firefox', version: 'dev'},
   'SL_SAFARI7': {base: 'SauceLabs', browserName: 'safari', platform: 'OS X 10.9', version: '7.0'},
@@ -96,7 +93,7 @@ var customLaunchers = {
   'BS_IE10': {
     base: 'BrowserStack',
     browser: 'ie',
-    browser_version: '10.0',
+    browser_version: '10.1',
     os: 'Windows',
     os_version: '8'
   },

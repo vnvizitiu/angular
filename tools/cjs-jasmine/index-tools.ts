@@ -6,13 +6,14 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
+/* tslint:disable:no-var-keyword */
+
 'use strict';
 
 var glob = require('glob');
 require('zone.js/dist/zone-node.js');
 var JasmineRunner = require('jasmine');
 var path = require('path');
-// require('core-js');
 require('zone.js/dist/long-stack-trace-zone.js');
 require('zone.js/dist/proxy.js');
 require('zone.js/dist/sync-test.js');
@@ -29,8 +30,6 @@ function toolsDirRequire(moduleId: string) {
 
 // Tun on full stack traces in errors to help debugging
 (<any>Error)['stackTraceLimit'] = Infinity;
-
-jrunner.jasmine.DEFAULT_TIMEOUT_INTERVAL = 100;
 
 // Support passing multiple globs
 var globsIndex = process.argv.indexOf('--');

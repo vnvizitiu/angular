@@ -6,6 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
+/* tslint:disable:no-console  */
 import {spawn} from 'child_process';
 import {existsSync, mkdirSync, writeFileSync} from 'fs';
 
@@ -14,48 +15,10 @@ import {TSC, TscWatch, reportError} from './tsc_watch';
 export * from './tsc_watch';
 import 'reflect-metadata';
 
-const OFFLINE_COMPILE =
-    ['output/output_emitter_codegen_untyped', 'output/output_emitter_codegen_typed'];
-
-function processOutputEmitterCodeGen(): Promise<number> {
-  return new Promise((resolve, reject) => {
-           var outDir = 'dist/all/@angular/compiler/test/';
-           var promises: Promise<any>[] = [];
-           console.log('Processing codegen...');
-           OFFLINE_COMPILE.forEach((file: string) => {
-             var codegen = require('../../all/@angular/compiler/test/' + file + '.js');
-             if (codegen.emit) {
-               console.log(`  ${file} has changed, regenerating...`);
-               promises.push(Promise.resolve(codegen.emit()).then((code) => {
-                 writeFileSync(outDir + file + '.ts', code);
-               }));
-             }
-           });
-           if (promises.length) {
-             Promise.all(promises)
-                 .then(() => {
-                   var args =
-                       ['--project', 'tools/cjs-jasmine/tsconfig-output_emitter_codegen.json'];
-                   console.log('    compiling changes: tsc ' + args.join(' '));
-                   var tsc = spawn(TSC, args, {stdio: 'pipe'});
-                   tsc.stdout.on('data', (data: any) => process.stdout.write(data));
-                   tsc.stderr.on('data', (data: any) => process.stderr.write(data));
-                   tsc.on(
-                       'close',
-                       (code: any) => code ? reject('Tsc exited with: ' + code) : resolve(code));
-                 })
-                 .catch(reportError);
-           } else {
-             resolve(0);
-           }
-         })
-      .catch(reportError);
-}
-
 function md(dir: string, folders: string[]) {
   if (folders.length) {
-    var next = folders.shift();
-    var path = dir + '/' + next;
+    const next = folders.shift();
+    const path = dir + '/' + next;
     if (!existsSync(path)) {
       mkdirSync(path);
     }
@@ -63,9 +26,9 @@ function md(dir: string, folders: string[]) {
   }
 }
 
-var tscWatch: TscWatch = null;
-var platform = process.argv.length >= 3 ? process.argv[2] : null;
-var runMode: string = process.argv.length >= 4 ? process.argv[3] : null;
+let tscWatch: TscWatch = null;
+const platform = process.argv.length >= 3 ? process.argv[2] : null;
+const runMode: string = process.argv.length >= 4 ? process.argv[3] : null;
 const BaseConfig = {
   start: 'File change detected. Starting incremental compilation...',
   error: 'error',
@@ -75,20 +38,17 @@ const BaseConfig = {
 if (platform == 'node') {
   tscWatch = new TscWatch(Object.assign(
       {
-        tsconfig: 'modules/tsconfig.json',
-        onChangeCmds: [
-          processOutputEmitterCodeGen,
-          [
-            'node', 'dist/tools/cjs-jasmine', '--', '@angular/**/*_spec.js',
-            '@angular/compiler-cli/test/**/*_spec.js', '@angular/benchpress/test/**/*_spec.js'
-          ]
-        ]
+        tsconfig: 'packages/tsconfig.json',
+        onChangeCmds: [[
+          'node', 'dist/tools/cjs-jasmine', '--', '@angular/**/*_spec.js',
+          '@angular/compiler-cli/test/**/*_spec.js', '@angular/benchpress/test/**/*_spec.js'
+        ]]
       },
       BaseConfig));
 } else if (platform == 'browser') {
   tscWatch = new TscWatch(Object.assign(
       {
-        tsconfig: 'modules/tsconfig.json',
+        tsconfig: 'packages/tsconfig.json',
         onStartCmds: [
           [
             'node', 'node_modules/karma/bin/karma', 'start', '--no-auto-watch', '--port=9876',
@@ -96,7 +56,7 @@ if (platform == 'node') {
           ],
           [
             'node', 'node_modules/karma/bin/karma', 'start', '--no-auto-watch', '--port=9877',
-            'modules/@angular/router/karma.conf.js'
+            'packages/router/karma.conf.js'
           ],
         ],
         onChangeCmds: [
@@ -108,11 +68,11 @@ if (platform == 'node') {
 } else if (platform == 'router') {
   tscWatch = new TscWatch(Object.assign(
       {
-        tsconfig: 'modules/tsconfig.json',
+        tsconfig: 'packages/tsconfig.json',
         onStartCmds: [
           [
             'node', 'node_modules/karma/bin/karma', 'start', '--no-auto-watch', '--port=9877',
-            'modules/@angular/router/karma.conf.js'
+            'packages/router/karma.conf.js'
           ],
         ],
         onChangeCmds: [
@@ -123,7 +83,7 @@ if (platform == 'node') {
 } else if (platform == 'browserNoRouter') {
   tscWatch = new TscWatch(Object.assign(
       {
-        tsconfig: 'modules/tsconfig.json',
+        tsconfig: 'packages/tsconfig.json',
         onStartCmds: [[
           'node', 'node_modules/karma/bin/karma', 'start', '--no-auto-watch', '--port=9876',
           'karma-js.conf.js'

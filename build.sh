@@ -1,28 +1,51 @@
 #!/usr/bin/env bash
 
-set -e -o pipefail
+set -u -e -o pipefail
 
-cd `dirname $0`
+readonly currentDir=$(cd $(dirname $0); pwd)
+source ${currentDir}/scripts/ci/_travis-fold.sh
+
+# TODO(i): wrap into subshell, so that we don't pollute CWD, but not yet to minimize diff collision with Jason
+cd ${currentDir}
 
 PACKAGES=(core
   compiler
   common
-  forms
+  animations
   platform-browser
   platform-browser-dynamic
+  forms
+  http
   platform-server
   platform-webworker
   platform-webworker-dynamic
-  http
   upgrade
   router
   compiler-cli
+  language-service
   benchpress)
+
+NODE_PACKAGES=(compiler-cli
+  benchpress)
+
 BUILD_ALL=true
 BUNDLE=true
+VERSION_PREFIX=$(node -p "require('./package.json').version")
+VERSION_SUFFIX="-$(git log --oneline -1 | awk '{print $1}')"
+REMOVE_BENCHPRESS=false
+BUILD_EXAMPLES=true
+COMPILE_SOURCE=true
+TYPECHECK_ALL=true
+BUILD_TOOLS=true
 
 for ARG in "$@"; do
   case "$ARG" in
+    --quick-bundle=*)
+      COMPILE_SOURCE=false
+      TYPECHECK_ALL=false
+      BUILD_EXAMPLES=false
+      BUILD_TOOLS=false
+      ;;
     --packages=*)
       PACKAGES_STR=${ARG#--packages=}
       PACKAGES=( ${PACKAGES_STR//,/ } )
@@ -31,6 +54,22 @@ for ARG in "$@"; do
     --bundle=*)
       BUNDLE=( "${ARG#--bundle=}" )
       ;;
+    --publish)
+      VERSION_SUFFIX=""
+      REMOVE_BENCHPRESS=true
+      ;;
+    --examples=*)
+      BUILD_EXAMPLES=${ARG#--examples=}
+      ;;
+    --compile=*)
+      COMPILE_SOURCE=${ARG#--compile=}
+      ;;
+    --typecheck=*)
+      TYPECHECK_ALL=${ARG#--typecheck=}
+      ;;
+    --tools=*)
+      BUILD_TOOLS=${ARG#--tools=}
+      ;;
     *)
       echo "Unknown option $ARG."
       exit 1
@@ -38,161 +77,439 @@ for ARG in "$@"; do
   esac
 done
 
-export NODE_PATH=${NODE_PATH}:$(pwd)/dist/all:$(pwd)/dist/tools
-TSC="node --max-old-space-size=3000 dist/tools/@angular/tsc-wrapped/src/main"
+#######################################
+# Verifies a directory isn't in the ignored list
+# Arguments:
+#   param1 - Path to check
+# Returns:
+#   Boolean
+#######################################
+isIgnoredDirectory() {
+  name=$(basename ${1})
+  if [[ -f "${1}" || "${name}" == "src" || "${name}" == "test" || "${name}" == "integrationtest" ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+#######################################
+# Check if array contains an element
+# Arguments:
+#   param1 - Element to check
+#   param2 - Array to look for element in
+# Returns:
+#   None
+#######################################
+containsElement () {
+  local e
+  for e in "${@:2}"; do [[ "$e" == "$1" ]] && return 0; done
+  return 1
+}
+
+#######################################
+# Downlevel ES2015 to ESM/ES5
+# Arguments:
+#   param1 - Source folder
+#   param2 - Naming suffix to apply. Must end in ".ts" (defaults to .es5.ts)
+# Returns:
+#   None
+#######################################
+downlevelES2015() {
+  # Iterate over the files in this directory, converting to .es5.ts
+  regex="(.+).js"
+  for file in ${1}/*.js ; do
+    if [[ ${file} =~ $regex ]]; then
+      ts_file="${BASH_REMATCH[1]}${2:-".es5.ts"}"
+      cp ${file} ${ts_file}
+
+      echo "======           $TSC ${ts_file} --target es5 --module es2015 --noLib --sourceMap --importHelpers"
+      ($TSC ${ts_file} --target es5 --module es2015 --noLib --sourceMap --importHelpers) > /dev/null 2>&1 || true
+      mapSources "${BASH_REMATCH[1]}${2:-".es5.js"}"
+      rm -f ${ts_file}
+    fi
+  done
+
+  # Recurse for sub directories
+  for DIR in ${1}/* ; do
+    isIgnoredDirectory ${DIR} && continue
+    downlevelES2015 ${DIR}
+  done
+}
+
+#######################################
+# Rollup index files recursively, ignoring blacklisted directories
+# Arguments:
+#   param1 - Base source folder
+#   param2 - Destination directory
+#   param3 - Config file
+# Returns:
+#   None
+#######################################
+rollupIndex() {
+  # Iterate over the files in this directory, rolling up each into ${2} directory
+  local regex=".+/(.+)/index.js"
+  if [[ "${1}/index.js" =~ $regex ]]; then
+    in_file="${1}/index.js"
+    out_file="${2}/${BASH_REMATCH[1]}.js"
+
+    echo "======           $ROLLUP -i ${in_file} -o ${out_file}"
+
+    if [[ -f "${3}" ]]; then
+      $ROLLUP -i ${in_file} -o ${out_file} -c ${3} --sourcemap
+    else
+      $ROLLUP -i ${in_file} -o ${out_file} --sourcemap
+    fi
+    cat ${LICENSE_BANNER} > ${out_file}.tmp
+    cat ${out_file} >> ${out_file}.tmp
+    mv ${out_file}.tmp ${out_file}
+
+    mapSources "${out_file}"
+
+    # Recurse for sub directories
+    for DIR in ${1}/* ; do
+      isIgnoredDirectory ${DIR} && continue
+      # NOTE: We need to re-run this regex and use the new match as Bash doesn't have closures
+      if [[ "${1}/index.js" =~ $regex ]]; then
+        rollupIndex ${DIR} ${2}/${BASH_REMATCH[1]} "$(dirname $3)/${BASH_REMATCH[1]}/rollup.config.js"
+      fi
+    done
+  fi
+}
+
+
+#######################################
+# Recursively runs rollup on any entry point that has a "rollup.config.js" file
+# Arguments:
+#   param1 - Base source folder containing rollup.config.js
+# Returns:
+#   None
+#######################################
+runRollup() {
+  local regex="dest: ['\"](.+)['\"],*"
+  if [[ -f "${1}/rollup.config.js" ]]; then
+    cd ${1}
+
+    echo "======           $ROLLUP -c ${1}/rollup.config.js"
+    $ROLLUP -c rollup.config.js --sourcemap
+
+    local dest_line=$(cat "${1}/rollup.config.js" | grep 'dest:')
+    if [[ ${dest_line} =~ $regex ]]; then
+      mapSources "${BASH_REMATCH[1]}"
+    fi
+
+    # Recurse for sub directories
+    for DIR in ${1}/* ; do
+      isIgnoredDirectory ${DIR} && continue
+      runRollup ${DIR}
+    done
+  fi
+}
+
+#######################################
+# Adds banners to all files in a directory
+# Arguments:
+#   param1 - Directory to add license banners to
+# Returns:
+#   None
+#######################################
+addBanners() {
+  for file in ${1}/*; do
+    if [[ -f ${file} && "${file##*.}" != "map" ]]; then
+      cat ${LICENSE_BANNER} > ${file}.tmp
+      cat ${file} >> ${file}.tmp
+      mv ${file}.tmp ${file}
+    fi
+  done
+}
+
+#######################################
+# Minifies files in a directory
+# Arguments:
+#   param1 - Directory to minify
+# Returns:
+#   None
+#######################################
+minify() {
+  # Iterate over the files in this directory, rolling up each into ${2} directory
+  regex="(.+).js"
+  files=(${1}/*)
+  echo "${files[@]}"
+  for file in "${files[@]}"; do
+    echo "${file}"
+    base_file=$( basename "${file}" )
+    if [[ "${base_file}" =~ $regex && "${base_file##*.}" != "map" ]]; then
+      local out_file=$(dirname "${file}")/${BASH_REMATCH[1]}.min.js
+      $UGLIFYJS -c --screw-ie8 --comments -o ${out_file} --source-map ${out_file}.map --source-map-include-sources ${file}
+      mapSources "${out_file}"
+    fi
+  done
+}
+
+#######################################
+# Recursively compile package
+# Arguments:
+#   param1 - Source directory
+#   param2 - Out dir
+#   param3 - Package Name
+#   param4 - Is child (are we recursing?)
+# Returns:
+#   None
+#######################################
+compilePackage() {
+  echo "======      [${3}]: COMPILING: ${NGC} -p ${1}/tsconfig-build.json"
+  # For NODE_PACKAGES items (not getting rolled up)
+  if containsElement "${PACKAGE}" "${NODE_PACKAGES[@]}"; then
+    $TSC -p ${1}/tsconfig-build.json
+  else
+    local package_name=$(basename "${2}")
+    $NGC -p ${1}/tsconfig-build.json
+    echo "======           Create ${1}/../${package_name}.d.ts re-export file for Closure"
+    echo "$(cat ${LICENSE_BANNER}) ${N} export * from './${package_name}/index'" > ${2}/../${package_name}.d.ts
+    echo "{\"__symbolic\":\"module\",\"version\":3,\"metadata\":{},\"exports\":[{\"from\":\"./${package_name}/index\"}],\"flatModuleIndexRedirect\":true}" > ${2}/../${package_name}.metadata.json
+  fi
+
+  for DIR in ${1}/* ; do
+    [ -d "${DIR}" ] || continue
+    BASE_DIR=$(basename "${DIR}")
+    # Skip over directories that are not nested entry points
+    [[ -e ${DIR}/tsconfig-build.json && "${BASE_DIR}" != "integrationtest" ]] || continue
+    compilePackage ${DIR} ${2}/${BASE_DIR} ${3} true
+  done
+}
+
+#######################################
+# Moves typings and metadata files appropriately
+# Arguments:
+#   param1 - Source of typings & metadata files
+#   param2 - Root of destination directory
+#   param3 - Package name (needed to correspond to name of d.ts and metadata.json files)
+# Returns:
+#   None
+#######################################
+moveTypings() {
+  if [[ -f ${1}/index.d.ts && -f ${1}/index.metadata.json ]]; then
+    mv ${1}/index.d.ts ${1}/${2}.d.ts
+    mv ${1}/index.metadata.json ${1}/${2}.metadata.json
+  fi
+}
+
+#######################################
+# Adds a package.json in directories where needed (secondary entry point typings).
+# This is read by NGC to be able to find the flat module index.
+# Arguments:
+#   param1 - Source directory of typings files
+# Returns:
+#   None
+#######################################
+addNgcPackageJson() {
+  for DIR in ${1}/* ; do
+    [ -d "${DIR}" ] || continue
+    # Confirm there is an index.d.ts and index.metadata.json file. If so, create
+    # the package.json and recurse.
+    if [[ -f ${DIR}/index.d.ts && -f ${DIR}/index.metadata.json ]]; then
+      echo '{"typings": "index.d.ts"}' > ${DIR}/package.json
+      addNgcPackageJson ${DIR}
+    fi
+  done
+}
+
+#######################################
+# This is read by NGC to be able to find the flat module index.
+# Arguments:
+#   param1 - JavaScript file on which to re-map sources
+# Returns:
+#   None
+#######################################
+mapSources() {
+  if [[ -f "${1}.map" ]]; then
+    $MAP_SOURCES -f "${1}"
+  fi
+}
+
+VERSION="${VERSION_PREFIX}${VERSION_SUFFIX}"
+echo "====== BUILDING: Version ${VERSION}"
+
+N="
+"
+TSC=`pwd`/node_modules/.bin/tsc
+NGC="node --max-old-space-size=3000 dist/packages-dist/tsc-wrapped/src/main"
+MAP_SOURCES="node `pwd`/scripts/build/map_sources.js "
 UGLIFYJS=`pwd`/node_modules/.bin/uglifyjs
 TSCONFIG=./tools/tsconfig.json
-echo "====== (tools)COMPILING: \$(npm bin)/tsc -p ${TSCONFIG} ====="
-rm -rf ./dist/tools/
-mkdir -p ./dist/tools/
-$(npm bin)/tsc -p ${TSCONFIG}
+ROLLUP=`pwd`/node_modules/.bin/rollup
 
-cp ./tools/@angular/tsc-wrapped/package.json ./dist/tools/@angular/tsc-wrapped
+if [[ ${BUILD_TOOLS} == true ]]; then
+  travisFoldStart "build tools" "no-xtrace"
+    echo "====== (tools)COMPILING: \$(npm bin)/tsc -p ${TSCONFIG} ====="
+    rm -rf ./dist/tools/
+    mkdir -p ./dist/tools/
+    $(npm bin)/tsc -p ${TSCONFIG}
+  travisFoldEnd "build tools"
+fi
+
+
+if [[ ${BUILD_ALL} == true && ${TYPECHECK_ALL} == true ]]; then
+  travisFoldStart "clean dist" "no-xtrace"
+    rm -rf ./dist/all/
+    rm -rf ./dist/packages
+  travisFoldEnd "clean dist"
+
+  travisFoldStart "copy e2e files" "no-xtrace"
+    mkdir -p ./dist/all/
+
+    (
+      echo "====== Copying files needed for e2e tests ====="
+      cp -r ./modules/playground ./dist/all/
+      cp -r ./modules/playground/favicon.ico ./dist/
+      #rsync -aP ./modules/playground/* ./dist/all/playground/
+      mkdir ./dist/all/playground/vendor
+      cd ./dist/all/playground/vendor
+      ln -s ../../../../node_modules/core-js/client/core.js .
+      ln -s ../../../../node_modules/zone.js/dist/zone.js .
+      ln -s ../../../../node_modules/zone.js/dist/long-stack-trace-zone.js .
+      ln -s ../../../../node_modules/systemjs/dist/system.src.js .
+      ln -s ../../../../node_modules/base64-js .
+      ln -s ../../../../node_modules/reflect-metadata/Reflect.js .
+      ln -s ../../../../node_modules/rxjs .
+      ln -s ../../../../node_modules/angular/angular.js .
+      ln -s ../../../../node_modules/hammerjs/hammer.js .
+    )
+
+    (
+      echo "====== Copying files needed for benchmarks ====="
+      cp -r ./modules/benchmarks ./dist/all/
+      cp -r ./modules/benchmarks/favicon.ico ./dist/
+      mkdir ./dist/all/benchmarks/vendor
+      cd ./dist/all/benchmarks/vendor
+      ln -s ../../../../node_modules/core-js/client/core.js .
+      ln -s ../../../../node_modules/zone.js/dist/zone.js .
+      ln -s ../../../../node_modules/zone.js/dist/long-stack-trace-zone.js .
+      ln -s ../../../../node_modules/systemjs/dist/system.src.js .
+      ln -s ../../../../node_modules/reflect-metadata/Reflect.js .
+      ln -s ../../../../node_modules/rxjs .
+      ln -s ../../../../node_modules/angular/angular.js .
+      ln -s ../../../../bower_components/polymer .
+      ln -s ../../../../node_modules/incremental-dom/dist/incremental-dom-cjs.js
+    )
+  travisFoldEnd "copy e2e files"
+
+  TSCONFIG="packages/tsconfig.json"
+  travisFoldStart "tsc -p ${TSCONFIG}" "no-xtrace"
+    $TSC -p ${TSCONFIG}
+  travisFoldEnd "tsc -p ${TSCONFIG}"
+  TSCONFIG="modules/tsconfig.json"
+  travisFoldStart "tsc -p ${TSCONFIG}" "no-xtrace"
+    $TSC -p ${TSCONFIG}
+  travisFoldEnd "tsc -p ${TSCONFIG}"
+
+fi
 
 if [[ ${BUILD_ALL} == true ]]; then
-  rm -rf ./dist/all/
-  mkdir -p ./dist/all/
+  rm -rf ./dist/packages
+  if [[ ${BUNDLE} == true ]]; then
+    rm -rf ./dist/packages-dist
+  fi
+fi
 
-  echo "====== Copying files needed for e2e tests ====="
-  cp -r ./modules/playground ./dist/all/
-  cp -r ./modules/playground/favicon.ico ./dist/
-  #rsync -aP ./modules/playground/* ./dist/all/playground/
-  mkdir ./dist/all/playground/vendor
-  cd ./dist/all/playground/vendor
-  ln -s ../../../../node_modules/core-js/client/core.js .
-  ln -s ../../../../node_modules/zone.js/dist/zone.js .
-  ln -s ../../../../node_modules/zone.js/dist/long-stack-trace-zone.js .
-  ln -s ../../../../node_modules/systemjs/dist/system.src.js .
-  ln -s ../../../../node_modules/base64-js .
-  ln -s ../../../../node_modules/reflect-metadata/Reflect.js .
-  ln -s ../../../../node_modules/rxjs .
-  ln -s ../../../../node_modules/angular/angular.js .
-  ln -s ../../../../node_modules/hammerjs/hammer.js .
-  cd -
-
-  echo "====== Copying files needed for benchmarks ====="
-  cp -r ./modules/benchmarks ./dist/all/
-  cp -r ./modules/benchmarks/favicon.ico ./dist/
-  mkdir ./dist/all/benchmarks/vendor
-  cd ./dist/all/benchmarks/vendor
-  ln -s ../../../../node_modules/core-js/client/core.js .
-  ln -s ../../../../node_modules/zone.js/dist/zone.js .
-  ln -s ../../../../node_modules/zone.js/dist/long-stack-trace-zone.js .
-  ln -s ../../../../node_modules/systemjs/dist/system.src.js .
-  ln -s ../../../../node_modules/reflect-metadata/Reflect.js .
-  ln -s ../../../../node_modules/rxjs .
-  ln -s ../../../../node_modules/angular/angular.js .
-  ln -s ../../../../bower_components/polymer .
-  ln -s ../../../../node_modules/incremental-dom/dist/incremental-dom-cjs.js
-  cd -
-
-  TSCONFIG=./modules/tsconfig.json
-  echo "====== (all)COMPILING: \$(npm bin)/tsc -p ${TSCONFIG} ====="
-  # compile ts code
-  $TSC -p modules/tsconfig.json
-
-  rm -rf ./dist/packages-dist
+if [[ ${BUILD_TOOLS} == true || ${BUILD_ALL} == true ]]; then
+  echo "====== (tsc-wrapped)COMPILING: \$(npm bin)/tsc -p packages/tsc-wrapped/tsconfig.json ====="
+  $(npm bin)/tsc -p packages/tsc-wrapped/tsconfig.json
+  echo "====== (tsc-wrapped)COMPILING: \$(npm bin)/tsc -p packages/tsc-wrapped/tsconfig-build.json ====="
+  $(npm bin)/tsc -p packages/tsc-wrapped/tsconfig-build.json
+  cp ./packages/tsc-wrapped/package.json ./dist/packages-dist/tsc-wrapped
+  cp ./packages/tsc-wrapped/README.md ./dist/packages-dist/tsc-wrapped
+  (
+    cd dist/packages-dist/tsc-wrapped
+    echo "======       EXECUTE: perl -p -i -e \"s/0\.0\.0\-PLACEHOLDER/${VERSION}/g\" $""(grep -ril 0\.0\.0\-PLACEHOLDER .)"
+    perl -p -i -e "s/0\.0\.0\-PLACEHOLDER/${VERSION}/g" $(grep -ril 0\.0\.0\-PLACEHOLDER .) < /dev/null 2> /dev/null
+  )
 fi
 
 for PACKAGE in ${PACKAGES[@]}
 do
+  travisFoldStart "build package: ${PACKAGE}" "no-xtrace"
   PWD=`pwd`
-  SRCDIR=${PWD}/modules/@angular/${PACKAGE}
-  DESTDIR=${PWD}/dist/packages-dist/${PACKAGE}
-  UMD_ES5_PATH=${DESTDIR}/bundles/${PACKAGE}.umd.js
-  UMD_TESTING_ES5_PATH=${DESTDIR}/bundles/${PACKAGE}-testing.umd.js
-  UMD_STATIC_ES5_PATH=${DESTDIR}/bundles/${PACKAGE}-static.umd.js
-  UMD_UPGRADE_ES5_PATH=${DESTDIR}/bundles/${PACKAGE}-upgrade.umd.js
-  UMD_ES5_MIN_PATH=${DESTDIR}/bundles/${PACKAGE}.umd.min.js
-  UMD_STATIC_ES5_MIN_PATH=${DESTDIR}/bundles/${PACKAGE}-static.umd.min.js
-  UMD_UPGRADE_ES5_MIN_PATH=${DESTDIR}/bundles/${PACKAGE}-upgrade.umd.min.js
-  LICENSE_BANNER=${PWD}/modules/@angular/license-banner.txt
+  ROOT_DIR=${PWD}/packages
+  SRC_DIR=${ROOT_DIR}/${PACKAGE}
+  ROOT_OUT_DIR=${PWD}/dist/packages
+  OUT_DIR=${ROOT_OUT_DIR}/${PACKAGE}
+  NPM_DIR=${PWD}/dist/packages-dist/${PACKAGE}
+  MODULES_DIR=${NPM_DIR}/@angular
+  BUNDLES_DIR=${NPM_DIR}/bundles
 
-  rm -rf ${DESTDIR}
+  LICENSE_BANNER=${ROOT_DIR}/license-banner.txt
 
-  echo "======      COMPILING: ${TSC} -p ${SRCDIR}/tsconfig-build.json        ====="
-  $TSC -p ${SRCDIR}/tsconfig-build.json
-
-  if [[ -e ${SRCDIR}/tsconfig-upgrade.json ]]; then
-    echo "======      COMPILING: ${TSC} -p ${SRCDIR}/tsconfig-upgrade.json        ====="
-    $TSC -p ${SRCDIR}/tsconfig-upgrade.json
+  if [[ ${COMPILE_SOURCE} == true ]]; then
+    rm -rf ${OUT_DIR}
+    rm -f ${ROOT_OUT_DIR}/${PACKAGE}.js
+    compilePackage ${SRC_DIR} ${OUT_DIR} ${PACKAGE}
   fi
 
-  cp ${SRCDIR}/package.json ${DESTDIR}/
-  cp ${PWD}/modules/@angular/README.md ${DESTDIR}/
+  if [[ ${BUNDLE} == true ]]; then
+    echo "======      BUNDLING ${PACKAGE}: ${SRC_DIR} ====="
+    rm -rf ${NPM_DIR} && mkdir -p ${NPM_DIR}
 
-  if [[ -e ${SRCDIR}/tsconfig-testing.json ]]; then
-    echo "======      COMPILING TESTING: ${TSC} -p ${SRCDIR}/tsconfig-testing.json"
-    $TSC -p ${SRCDIR}/tsconfig-testing.json
+    if ! containsElement "${PACKAGE}" "${NODE_PACKAGES[@]}"; then
+
+      echo "======        Copy ${PACKAGE} typings"
+      rsync -a --exclude=*.js --exclude=*.js.map ${OUT_DIR}/ ${NPM_DIR}
+      moveTypings ${NPM_DIR} ${PACKAGE}
+
+      (
+        cd  ${SRC_DIR}
+        echo "======         Rollup ${PACKAGE}"
+        rollupIndex ${OUT_DIR} ${MODULES_DIR} ${ROOT_DIR}
+
+        echo "======         Downleveling ES2015 to ESM/ES5"
+        downlevelES2015 ${MODULES_DIR}
+
+        echo "======         Run rollup conversions on ${PACKAGE}"
+        runRollup ${SRC_DIR}
+        addBanners ${BUNDLES_DIR}
+        minify ${BUNDLES_DIR}
+
+      ) 2>&1 | grep -v "as external dependency"
+    else
+      echo "======        Copy ${PACKAGE} node tool"
+      rsync -a ${OUT_DIR}/ ${NPM_DIR}
+    fi
+
+    echo "======        Copy ${PACKAGE} package.json and .externs.js files"
+    rsync -am --include="package.json" --include="*/" --exclude=* ${SRC_DIR}/ ${NPM_DIR}/
+    rsync -am --include="*.externs.js" --include="*/" --exclude=* ${SRC_DIR}/ ${NPM_DIR}/
+
+    cp ${ROOT_DIR}/README.md ${NPM_DIR}/
   fi
 
-  echo "======      TSC 1.8 d.ts compat for ${DESTDIR}   ====="
-  # safely strips 'readonly' specifier from d.ts files to make them compatible with tsc 1.8
-  if [ "$(uname)" == "Darwin" ]; then
-    find ${DESTDIR} -type f -name '*.d.ts' -print0 | xargs -0 sed -i '' -e 's/\(^ *(static |private )*\)*readonly  */\1/g'
-    find ${DESTDIR} -type f -name '*.d.ts' -print0 | xargs -0 sed -i '' -e 's/\/\/\/ <reference types="node" \/>//g'
-    find ${DESTDIR} -type f -name '*.d.ts' -print0 | xargs -0 sed -i '' -E 's/^( +)abstract ([[:alnum:]]+\:)/\1\2/g'
-  else
-    find ${DESTDIR} -type f -name '*.d.ts' -print0 | xargs -0 sed -i -e 's/\(^ *(static |private )*\)*readonly  */\1/g'
-    find ${DESTDIR} -type f -name '*.d.ts' -print0 | xargs -0 sed -i -e 's/\/\/\/ <reference types="node" \/>//g'
-    find ${DESTDIR} -type f -name '*.d.ts' -print0 | xargs -0 sed -i -E 's/^( +)abstract ([[:alnum:]]+\:)/\1\2/g'
-  fi
 
-  if [[ ${PACKAGE} == benchpress ]]; then
-    cp ${SRCDIR}/*.md ${DESTDIR}
-    cp -r ${SRCDIR}/docs ${DESTDIR}
-  fi
-
-  if [[ ${BUNDLE} == true && ${PACKAGE} != compiler-cli && ${PACKAGE} != benchpress ]]; then
-
-    echo "======      BUNDLING: ${SRCDIR} ====="
-    mkdir ${DESTDIR}/bundles
-
+  if [[ -d ${NPM_DIR} ]]; then
     (
-      cd  ${SRCDIR}
-      echo "======         Rollup ${PACKAGE} index"
-      ../../../node_modules/.bin/rollup -c rollup.config.js
-      cat ${LICENSE_BANNER} > ${UMD_ES5_PATH}.tmp
-      cat ${UMD_ES5_PATH} >> ${UMD_ES5_PATH}.tmp
-      mv ${UMD_ES5_PATH}.tmp ${UMD_ES5_PATH}
-      $UGLIFYJS -c --screw-ie8 --comments -o ${UMD_ES5_MIN_PATH} ${UMD_ES5_PATH}
-
-
-      if [[ -e rollup-testing.config.js ]]; then
-        echo "======         Rollup ${PACKAGE} testing"
-        ../../../node_modules/.bin/rollup -c rollup-testing.config.js
-        echo "{\"main\": \"../bundles/${PACKAGE}-testing.umd.js\"}" > ${DESTDIR}/testing/package.json
-        cat ${LICENSE_BANNER} > ${UMD_TESTING_ES5_PATH}.tmp
-        cat ${UMD_TESTING_ES5_PATH} >> ${UMD_TESTING_ES5_PATH}.tmp
-        mv ${UMD_TESTING_ES5_PATH}.tmp ${UMD_TESTING_ES5_PATH}
-      fi
-
-      if [[ -e rollup-static.config.js ]]; then
-        echo "======         Rollup ${PACKAGE} static"
-        ../../../node_modules/.bin/rollup -c rollup-static.config.js
-        # create dir because it doesn't exist yet, we should move the src code here and remove this line
-        mkdir ${DESTDIR}/static
-        echo "{\"main\": \"../bundles/${PACKAGE}-static.umd.js\"}" > ${DESTDIR}/static/package.json
-        cat ${LICENSE_BANNER} > ${UMD_STATIC_ES5_PATH}.tmp
-        cat ${UMD_STATIC_ES5_PATH} >> ${UMD_STATIC_ES5_PATH}.tmp
-        mv ${UMD_STATIC_ES5_PATH}.tmp ${UMD_STATIC_ES5_PATH}
-        $UGLIFYJS -c --screw-ie8 --comments -o ${UMD_STATIC_ES5_MIN_PATH} ${UMD_STATIC_ES5_PATH}
-      fi
-
-      if [[ -e rollup-upgrade.config.js ]]; then
-        echo "======         Rollup ${PACKAGE} upgrade"
-        ../../../node_modules/.bin/rollup -c rollup-upgrade.config.js
-        # create dir because it doesn't exist yet, we should move the src code here and remove this line
-        mkdir ${DESTDIR}/upgrade
-        echo "{\"main\": \"../bundles/${PACKAGE}-upgrade.umd.js\"}" > ${DESTDIR}/upgrade/package.json
-        cat ${LICENSE_BANNER} > ${UMD_UPGRADE_ES5_PATH}.tmp
-        cat ${UMD_UPGRADE_ES5_PATH} >> ${UMD_UPGRADE_ES5_PATH}.tmp
-        mv ${UMD_UPGRADE_ES5_PATH}.tmp ${UMD_UPGRADE_ES5_PATH}
-        $UGLIFYJS -c --screw-ie8 --comments -o ${UMD_UPGRADE_ES5_MIN_PATH} ${UMD_UPGRADE_ES5_PATH}
-      fi
-    ) 2>&1 | grep -v "as external dependency"
-
+      echo "======      VERSION: Updating version references"
+      cd ${NPM_DIR}
+      echo "======       EXECUTE: perl -p -i -e \"s/0\.0\.0\-PLACEHOLDER/${VERSION}/g\" $""(grep -ril 0\.0\.0\-PLACEHOLDER .)"
+      perl -p -i -e "s/0\.0\.0\-PLACEHOLDER/${VERSION}/g" $(grep -ril 0\.0\.0\-PLACEHOLDER .) < /dev/null 2> /dev/null
+    )
   fi
+
+  travisFoldEnd "build package: ${PACKAGE}"
 done
 
-./modules/@angular/examples/build.sh
+if [[ ${BUILD_EXAMPLES} == true ]]; then
+  travisFoldStart "build examples" "no-xtrace"
+    echo "====== Building examples: ./packages/examples/build.sh ====="
+    ./packages/examples/build.sh
+  travisFoldEnd "build examples"
+fi
+
+if [[ ${REMOVE_BENCHPRESS} == true ]]; then
+  travisFoldStart "remove benchpress" "no-xtrace"
+    echo ""
+    echo "==== Removing benchpress from publication"
+    rm -r dist/packages-dist/benchpress
+  travisFoldEnd "remove benchpress"
+fi
+
+
+# Print return arrows as a log separator
+travisFoldReturnArrows
